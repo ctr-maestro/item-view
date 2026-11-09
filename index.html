@@ -219,7 +219,7 @@ td .row { display: flex; gap: 8px; align-items: center; }
 
 <div class="wrap">
   <main>
-    <div class="count"><span id="count"></span><span class="note">게임 툴팁에 표시되는 값만 보여줍니다 · 표시되지 않는 값은 ???</span></div>
+    <div class="count"><span id="count"></span><span class="note">게임 툴팁에 표시되는 값만 보여줍니다 · 추가옵션 포함 · 표시되지 않는 값은 ???</span></div>
     <div id="cards" class="cards"></div>
     <div id="tableWrap" class="tablewrap hidden"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
     <div id="empty" class="empty hidden">조건에 맞는 아이템이 없습니다</div>
@@ -390,7 +390,11 @@ function open(code, push = true) {
   const it = BY.get(+code);
   if (!it) return;
   const tip = it.t ? it.t.map(([k, txt, color]) => `<div class="${k === "l" ? "l" : "a"}"${color ? ` style="color:${esc(color)}"` : ""}>${esc(txt)}</div>`).join("") : `<div class="q">게임 툴팁 정보 없음</div>`;
-  const stats = D.stats.map(k => { const v = sv(it, k); return `<div class="stat"><div class="k">${esc(k)}</div><div class="v mono${v == null ? " q" : ""}">${v == null ? "???" : esc(v)}</div></div>`; }).join("");
+  const stats = D.stats.map(k => {
+    const v = sv(it, k), o = it.op?.[k];
+    const sub = o ? [o[1] != null ? `기본 ${o[0] ?? 0} · 추가옵션 ${o[1]}${o[2] ? ` (최대 ${o[2]})` : ""}` : "", o[3] ? `획득 가능 옵션 ${o[3]}` : ""].filter(Boolean).join("<br>") : "";
+    return `<div class="stat"><div class="k">${esc(k)}</div><div class="v mono${v == null ? " q" : ""}">${v == null ? "???" : esc(v)}</div>${sub ? `<div class="k" style="margin-top:2px">${sub}</div>` : ""}</div>`;
+  }).join("");
   const r = D.recipes[it.c];
   let fac = "";
   if (r) {
@@ -409,7 +413,7 @@ function open(code, push = true) {
       : `<p class="desc" style="margin:0">클라이언트 파일에 획득처 정보가 없습니다 (랜덤 상자 · 설계도 제작 결과 등은 서버에서 정해짐)</p>`}</div>`
     + famSection(it)
     + `<div class="sec"><h3>게임 툴팁</h3><div class="tip"><div class="t-name">${esc(it.n)}</div>${tip}${it.x ? `<div class="x">${esc(it.x)}</div>` : ""}</div></div>`
-    + (it.s > 0 || it.st ? `<div class="sec"><h3>성능</h3><p class="desc">툴팁에 표시되는 값 · 표시되지 않는 값은 ???</p><div class="stats">${stats}</div></div>` : "")
+    + (it.s > 0 || it.st ? `<div class="sec"><h3>성능</h3><p class="desc">툴팁에 표시되는 값 · 추가옵션이 붙어 있으면 더한 값 · 표시되지 않는 값은 ???</p><div class="stats">${stats}</div></div>` : "")
     + fac + `<div class="sec"><h3>정보</h3><dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div></div>`;
   $("#modal").classList.remove("hidden");
   document.body.style.overflow = "hidden";
