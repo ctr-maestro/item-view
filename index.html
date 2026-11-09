@@ -173,6 +173,10 @@ td .row { display: flex; gap: 8px; align-items: center; }
 .src .k { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
 .src .v { color: var(--text); }
 .pill.price b { color: var(--gold); }
+.vars { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+.vars table { font-size: 12.5px; }
+.vars tr.on { background: var(--accent-soft); }
+.vars td, .vars th { padding: 5px 8px; }
 .foot { color: var(--muted); font-size: 12px; padding: 0 0 32px; line-height: 1.7; }
 </style>
 </head>
@@ -232,7 +236,7 @@ td .row { display: flex; gap: 8px; align-items: center; }
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const PAGE = 120;
-let D = null, BY = new Map(), USED = new Map(), view = "cards", shown = PAGE, sortKey = null, sortDir = -1, list = [];
+let D = null, BY = new Map(), USED = new Map(), FAM = new Map(), view = "cards", shown = PAGE, sortKey = null, sortDir = -1, list = [];
 const st = { part: "all", group: "", cls: "", car: "", q: "", src: "" };
 
 // ---------------- 데이터
@@ -241,6 +245,7 @@ fetch("items.json").then(r => r.json()).then(init).catch(e => { $("#built").text
 function init(data) {
   D = data;
   for (const it of D.items) BY.set(it.c, it);
+  for (const [id, [n, codes]] of Object.entries(D.fams || {})) FAM.set(+id, { n, codes, items: codes.map(c => BY.get(c)).filter(Boolean) });
   for (const [bp, [, mats]] of Object.entries(D.recipes))
     for (const m of new Set(mats)) { if (m !== +bp) { if (!USED.has(m)) USED.set(m, []); USED.get(m).push(+bp); } }
   $("#built").textContent = `게임 데이터 ${D.source["itemlist.cnv"].slice(0, 10)} · 아이템 ${D.items.length.toLocaleString()}개`;
@@ -281,7 +286,17 @@ function filtered() {
     && (st.cls === "" || it.k === +st.cls)
     && (st.car === "" || (st.car === "0" ? !it.car : it.car === +st.car))
     && (!st.src || (st.src === "__use" ? USED.has(it.c) : (it.src || []).some(s => s[0] === st.src)))
-    && (!q || it.n.toLowerCase().includes(q) || String(it.c) === q || (it.car && carName(it).toLowerCase().includes(q))));
+    && (!q || it.n.toLowerCase().includes(q) || String(it.c) === q || (it.car && carName(it).toLowerCase().includes(q))
+        || (it.fm && FAM.get(it.fm).n.toLowerCase().includes(q))));
+}
+function range(items, stat, src) {
+  // 묶음 안의 값 범위 ('+60 ~ +70'). src 를 주면 그 획득처 설명(가격) 범위
+  const vals = items.map(x => stat ? sv(x, stat) : (x.src || []).find(s => s[0] === src)?.[1]).filter(v => v != null);
+  if (!vals.length) return "???";
+  const nums = vals.map(v => parseFloat(String(v).replace(/,/g, "").replace(/[^\d.+\-]/g, "")));
+  if (nums.some(isNaN) || new Set(vals).size === 1) return vals[0];
+  const lo = vals[nums.indexOf(Math.min(...nums))], hi = vals[nums.indexOf(Math.max(...nums))];
+  return lo === hi ? lo : `${lo} ~ ${hi}`;
 }
 const statNum = v => v == null ? null : parseFloat(String(v).replace(/[^\d.+\-~]/g, "").split("~").pop());
 
@@ -310,6 +325,11 @@ const sv = (it, k) => it.st?.[k] ?? null;
 
 function render() {
   list = sorted(filtered());
+  if (view === "cards" && !st.car) {
+    // 차량별로 나뉜 같은 아이템은 카드 하나로 (차량 필터를 고르면 개별로)
+    const seen = new Set();
+    list = list.filter(it => !it.fm || (!seen.has(it.fm) && seen.add(it.fm)));
+  }
   $("#count").textContent = `${list.length.toLocaleString()}개`;
   $("#empty").classList.toggle("hidden", list.length > 0);
   $("#resetBtn").classList.toggle("hidden", !(st.part !== "all" || st.group || st.cls || st.car || st.q || st.src));
@@ -320,7 +340,13 @@ function render() {
     $("#tableWrap").classList.add("hidden");
     $("#cards").classList.remove("hidden");
     $("#cards").innerHTML = page.map(it => {
-      const pills = D.stats.filter(k => sv(it, k) != null).slice(0, 3).map(k => `<span class="pill">${esc(k)} <b>${esc(sv(it, k))}</b></span>`).join("");
+      const fam = view === "cards" && !st.car && it.fm ? FAM.get(it.fm) : null;
+      const pills = D.stats.filter(k => sv(it, k) != null).slice(0, 3).map(k => `<span class="pill">${esc(k)} <b>${esc(fam ? range(fam.items, k) : sv(it, k))}</b></span>`).join("");
+      if (fam) {
+        const shop = (it.src || []).find(s => s[0] === "상점");
+        return `<button type="button" class="it" data-c="${it.c}">${icon({ ...it, car: 0 })}<span class="body"><div class="nm">${esc(fam.n)}${clsTag(it)}</div>`
+          + `<div class="sub">${esc(groupName(it))} · 차량 ${fam.items.length}종</div><div class="st">${pills}${shop ? `<span class="pill price"><b>${esc(range(fam.items, null, "상점"))}</b></span>` : ""}</div></span></button>`;
+      }
       const shop = (it.src || []).find(s => s[0] === "상점");
       const fac = (shop ? `<span class="pill price"><b>${esc(shop[1])}</b></span>` : "")
         + (D.recipes[it.c] ? `<span class="pill">${it.f === 2 ? "설계도" : "조합"}</span>` : "");
@@ -389,6 +415,7 @@ function open(code, push = true) {
     + `<button type="button" class="icon-btn x" id="closeBtn" aria-label="닫기">✕</button></div><div class="sheet-body">`
     + `<div class="sec"><h3>얻는 곳</h3>${it.src ? `<div class="srcs">${it.src.map(([k, v]) => `<div class="src"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("")}</div>`
       : `<p class="desc" style="margin:0">클라이언트 파일에 획득처 정보가 없습니다 (랜덤 상자 · 설계도 제작 결과 등은 서버에서 정해짐)</p>`}</div>`
+    + famSection(it)
     + `<div class="sec"><h3>게임 툴팁</h3><div class="tip"><div class="t-name">${esc(it.n)}</div>${tip}${it.x ? `<div class="x">${esc(it.x)}</div>` : ""}</div></div>`
     + (it.s > 0 || it.st ? `<div class="sec"><h3>성능</h3><p class="desc">툴팁에 표시되는 값 · 표시되지 않는 값은 ???</p><div class="stats">${stats}</div></div>` : "")
     + fac + `<div class="sec"><h3>정보</h3><dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div></div>`;
@@ -396,6 +423,19 @@ function open(code, push = true) {
   document.body.style.overflow = "hidden";
   $("#sheet").scrollTop = 0;
   if (push && location.hash !== "#" + it.c) history.pushState(null, "", "#" + it.c);
+}
+function famSection(it) {
+  const fam = it.fm && FAM.get(it.fm);
+  if (!fam) return "";
+  const cols = D.stats.filter(k => fam.items.some(x => sv(x, k) != null));
+  const rows = fam.items.map(x => {
+    const shop = (x.src || []).find(s => s[0] === "상점");
+    return `<tr data-c="${x.c}" class="${x.c === it.c ? "on" : ""}"><td class="l"><span class="row">${icon(x, "sm")}${esc(carName(x))}</span></td>`
+      + `<td>${esc(D.labels.class[x.k] ?? "")}</td>` + cols.map(k => { const v = sv(x, k); return v == null ? `<td class="q">???</td>` : `<td class="mono">${esc(v)}</td>`; }).join("")
+      + `<td class="mono">${shop ? esc(shop[1]) : ""}</td></tr>`;
+  }).join("");
+  return `<div class="sec"><h3>같은 아이템 · 차량 ${fam.items.length}종 <span class="tag">${esc(fam.n)}</span></h3><p class="desc">차량을 누르면 그 차량용으로 바뀝니다</p>`
+    + `<div class="vars"><table><thead><tr><th class="l">차량</th><th>클래스</th>${cols.map(k => `<th>${esc(k)}</th>`).join("")}<th>상점</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function close(push = true) {
   $("#modal").classList.add("hidden");
