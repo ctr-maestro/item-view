@@ -212,7 +212,6 @@ td .row { display: flex; gap: 8px; align-items: center; }
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
       <input type="search" id="fSearch" placeholder="아이템 · 차량 이름 · 코드 검색  ( / )" aria-label="아이템 검색">
     </label>
-    <label class="field sel"><select id="fSrc" aria-label="얻는 곳"></select></label>
     <div class="seg" role="tablist" aria-label="보기"><button type="button" id="vCards" class="on">카드</button><button type="button" id="vTable">표</button></div>
     <button type="button" class="reset hidden" id="resetBtn">초기화</button>
   </div>
@@ -237,7 +236,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const PAGE = 120;
 let D = null, BY = new Map(), USED = new Map(), FAM = new Map(), view = "cards", shown = PAGE, sortKey = null, sortDir = -1, list = [];
-const st = { part: "all", group: "", cls: "", car: "", q: "", src: "" };
+const st = { part: "all", group: "", cls: "", car: "", q: "" };
 
 // ---------------- 데이터
 fetch("items.json").then(r => r.json()).then(init).catch(e => { $("#built").textContent = "데이터를 불러오지 못했습니다"; console.error(e); });
@@ -250,7 +249,7 @@ function init(data) {
     for (const m of new Set(mats)) { if (m !== +bp) { if (!USED.has(m)) USED.set(m, []); USED.get(m).push(+bp); } }
   $("#built").textContent = `게임 데이터 ${D.source["itemlist.cnv"].slice(0, 10)} · 아이템 ${D.items.length.toLocaleString()}개`;
   $("#foot").innerHTML = `CTRacer 클라이언트 파일(아이템 목록 · 툴팁 · 팩토리 조합표 · 분해표)에서 만든 비공식 페이지입니다. 실제 게임 적용 값과 다를 수 있습니다.<br>`
-    + `조합 결과물은 클라이언트 파일에 없어 설계도와 재료만 표시합니다. 생성 ${esc(D.built.replace("T", " ").slice(0, 16))}`;
+    + `팩토리 조합 결과는 클라이언트 파일에 없어(서버가 정함) 주 재료 · 함께 넣는 재료 · 수수료만 표시합니다. 생성 ${esc(D.built.replace("T", " ").slice(0, 16))}`;
   const parts = [["all", "전체"], ...Object.entries(D.labels.part).filter(([k], i, a) => a.findIndex(x => x[1] === D.labels.part[k]) === i)];
   $("#partChips").innerHTML = parts.map(([k, v]) => `<button type="button" class="chip${k === "all" ? " on" : ""}" data-k="${k}">${esc(v)}</button>`).join("");
   $("#fClass").innerHTML = `<option value="">모든 클래스</option>` + Object.entries(D.labels.class).map(([k, v]) => `<option value="${k}">${k === "0" ? "클래스 무관" : v + " 클래스"}</option>`).join("");
@@ -259,10 +258,6 @@ function init(data) {
   const carOpts = Object.entries(D.cars).sort((a, b) => a[1][1] - b[1][1] || a[1][0].localeCompare(b[1][0]))
     .map(([c, [n, k]]) => `<option value="${c}">${esc(D.labels.class[k] ?? "")} · ${esc(n)} (${carCount.get(+c) || 0})</option>`);
   $("#fCar").innerHTML = `<option value="">모든 차량</option><option value="0">공용 (차량 무관)</option>` + carOpts.join("");
-  const srcCount = new Map();
-  for (const it of D.items) for (const k of new Set((it.src || []).map(s => s[0]))) srcCount.set(k, (srcCount.get(k) || 0) + 1);
-  $("#fSrc").innerHTML = `<option value="">모든 획득처</option>` + [...srcCount].sort((a, b) => b[1] - a[1]).map(([k, n]) => `<option value="${esc(k)}">${esc(k)} (${n})</option>`).join("")
-    + `<option value="__use">팩토리 재료로 쓰임</option>`;
   fillGroups();
   bind();
   route();
@@ -285,7 +280,6 @@ function filtered() {
     && (st.group === "" || it.g === +st.group)
     && (st.cls === "" || it.k === +st.cls)
     && (st.car === "" || (st.car === "0" ? !it.car : it.car === +st.car))
-    && (!st.src || (st.src === "__use" ? USED.has(it.c) : (it.src || []).some(s => s[0] === st.src)))
     && (!q || it.n.toLowerCase().includes(q) || String(it.c) === q || (it.car && carName(it).toLowerCase().includes(q))
         || (it.fm && FAM.get(it.fm).n.toLowerCase().includes(q))));
 }
@@ -332,7 +326,7 @@ function render() {
   }
   $("#count").textContent = `${list.length.toLocaleString()}개`;
   $("#empty").classList.toggle("hidden", list.length > 0);
-  $("#resetBtn").classList.toggle("hidden", !(st.part !== "all" || st.group || st.cls || st.car || st.q || st.src));
+  $("#resetBtn").classList.toggle("hidden", !(st.part !== "all" || st.group || st.cls || st.car || st.q));
   const page = list.slice(0, shown);
   $("#moreBtn").classList.toggle("hidden", list.length <= shown);
   $("#moreBtn").textContent = `더 보기 (${(list.length - shown).toLocaleString()}개 남음)`;
@@ -349,7 +343,7 @@ function render() {
       }
       const shop = (it.src || []).find(s => s[0] === "상점");
       const fac = (shop ? `<span class="pill price"><b>${esc(shop[1])}</b></span>` : "")
-        + (D.recipes[it.c] ? `<span class="pill">${it.f === 2 ? "설계도" : "조합"}</span>` : "");
+        + (D.recipes[it.c] ? `<span class="pill">${esc(D.recipes[it.c][2] || "조합")}</span>` : "");
       return `<button type="button" class="it" data-c="${it.c}">${icon(it)}<span class="body"><div class="nm">${esc(it.n)}${clsTag(it)}</div>`
         + `<div class="sub">${esc(groupName(it))}${carName(it) ? " · " + esc(carName(it)) : ""}</div><div class="st">${pills}${fac}</div></span></button>`;
     }).join("");
@@ -384,8 +378,7 @@ function tree(code, depth = 0, path = new Set()) {
   if (!r || depth > 6 || path.has(code)) return "";
   path.add(code);
   const out = [...count(r[1].filter(m => m !== code))].map(([m, n]) => {
-    const sub = D.recipes[m] ? `<div class="tree">${tree(m, depth + 1, path)}</div>` : "";
-    return matRow(m, n, D.recipes[m] ? `<span class="tag">${BY.get(m)?.f === 2 ? "설계도" : "조합 가능"}</span>` : "") + sub;
+    return matRow(m, n, BY.get(m)?.f === 2 ? `<span class="tag">설계도</span>` : "");
   }).join("");
   path.delete(code);
   return out;
@@ -399,15 +392,12 @@ function open(code, push = true) {
   const r = D.recipes[it.c];
   let fac = "";
   if (r) {
-    const tot = [...totals(it.c)].sort((a, b) => b[1] - a[1]);
-    fac += it.f === 2
-      ? `<div class="sec"><h3>설계도 사용 레시피</h3><p class="desc">팩토리에서 이 설계도 + 아래 재료 + 수수료 ${r[0].toLocaleString()} CT 로 제작합니다. 제작 결과는 게임 서버가 정합니다 (설명 참고)</p>${tree(it.c)}</div>`
-      : `<div class="sec"><h3>팩토리 조합 레시피</h3><p class="desc">아래 재료 + 수수료 ${r[0].toLocaleString()} CT → ${esc(it.n)} · 재료도 조합으로 만들 수 있으면 펼쳐서 보여줍니다</p>${tree(it.c)}</div>`;
-    if (tot.some(([m]) => !r[1].includes(m)))
-      fac += `<div class="sec"><h3>기본 재료 합계</h3><p class="desc">하위 설계도까지 끝까지 펼쳤을 때 필요한 재료 (하위 설계도의 수수료는 제외)</p>${tot.map(([m, n]) => matRow(m, n)).join("")}</div>`;
+    fac += `<div class="sec"><h3>이 아이템으로 하는 팩토리 조합${r[2] ? ` <span class="tag">${esc(r[2])}</span>` : ""}</h3>`
+      + `<p class="desc">팩토리에 ${esc(it.n)} 을(를) 주 재료로 넣고 + 아래 재료 + 수수료 ${r[0].toLocaleString()} CT · 결과 아이템은 게임 서버가 정합니다 (툴팁 설명 참고)</p>${tree(it.c)}</div>`;
+
   }
   const used = USED.get(it.c);
-  if (used) fac += `<div class="sec"><h3>이 아이템이 재료로 쓰이는 곳 <span class="tag">${used.length}</span></h3>${used.slice(0, 60).map(b => matRow(b, count(D.recipes[b][1]).get(it.c))).join("")}${used.length > 60 ? `<p class="desc">…외 ${used.length - 60}개</p>` : ""}</div>`;
+  if (used) fac += `<div class="sec"><h3>다른 조합의 재료로 쓰임 <span class="tag">${used.length}</span></h3><p class="desc">주 재료 아이템 (누르면 그 조합을 봅니다)</p>${used.slice(0, 60).map(b => matRow(b, count(D.recipes[b][1]).get(it.c))).join("")}${used.length > 60 ? `<p class="desc">…외 ${used.length - 60}개</p>` : ""}</div>`;
   const kv = [["코드", it.c], ["파츠", D.labels.part[it.p]], ["분류", groupName(it)], ["클래스", D.labels.class[it.k]], ["적용 차량", carName(it) || "공용"],
     ["판매 방식", D.labels.pay[it.pay]], ["거래소", it.tr ? "등록 가능" : null], ["팩토리", D.labels.factory[it.f]], ["분해 포인트", it.d]].filter(([, v]) => v != null && v !== "");
   const carImg = it.car && D.cars[it.car]?.[2] ? `<img class="carimg" src="icons/car/${it.car}.webp" alt="${esc(carName(it))}" title="적용 차량 ${esc(carName(it))}">` : "";
@@ -457,10 +447,9 @@ function bind() {
   $("#fClass").addEventListener("change", e => { st.cls = e.target.value; reset(); });
   $("#fCar").addEventListener("change", e => { st.car = e.target.value; reset(); });
   let t; $("#fSearch").addEventListener("input", e => { clearTimeout(t); t = setTimeout(() => { st.q = e.target.value; reset(); }, 120); });
-  $("#fSrc").addEventListener("change", e => { st.src = e.target.value; reset(); });
   $("#resetBtn").addEventListener("click", () => {
-    Object.assign(st, { part: "all", group: "", cls: "", car: "", q: "", src: "" });
-    $("#fSearch").value = ""; $("#fClass").value = ""; $("#fCar").value = ""; $("#fSrc").value = "";
+    Object.assign(st, { part: "all", group: "", cls: "", car: "", q: "" });
+    $("#fSearch").value = ""; $("#fClass").value = ""; $("#fCar").value = "";
     document.querySelectorAll("#partChips .chip").forEach(x => x.classList.toggle("on", x.dataset.k === "all"));
     fillGroups(); reset();
   });
