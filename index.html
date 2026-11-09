@@ -315,6 +315,8 @@ function icon(it, size = "") {
 }
 const clsTag = it => it.k ? `<span class="cls">${esc(D.labels.class[it.k])}</span>` : "";
 const groupName = it => D.labels.group[it.g] ?? "";
+// 아이템 클래스가 '전체'(0)인데 전용 차량이 있으면 차량 클래스로 표시
+const clsOf = it => D.labels.class[it.k || (it.car && D.cars[it.car]?.[1]) || 0] ?? "";
 const sv = (it, k) => it.st?.[k] ?? null;
 
 function render() {
@@ -421,10 +423,14 @@ function famSection(it) {
   const rows = fam.items.map(x => {
     const shop = (x.src || []).find(s => s[0] === "상점");
     return `<tr data-c="${x.c}" class="${x.c === it.c ? "on" : ""}"><td class="l"><span class="row">${icon(x, "sm")}${esc(carName(x))}</span></td>`
-      + `<td>${esc(D.labels.class[x.k] ?? "")}</td>` + cols.map(k => { const v = sv(x, k); return v == null ? `<td class="q">???</td>` : `<td class="mono">${esc(v)}</td>`; }).join("")
+      + `<td>${esc(clsOf(x))}</td>` + cols.map(k => { const v = sv(x, k); return v == null ? `<td class="q">???</td>` : `<td class="mono">${esc(v)}</td>`; }).join("")
       + `<td class="mono">${shop ? esc(shop[1]) : ""}</td></tr>`;
   }).join("");
-  return `<div class="sec"><h3>같은 아이템 · 차량 ${fam.items.length}종 <span class="tag">${esc(fam.n)}</span></h3><p class="desc">차량을 누르면 그 차량용으로 바뀝니다</p>`
+  const opts = [...fam.items].sort((a, b) => (D.cars[a.car]?.[1] ?? a.k) - (D.cars[b.car]?.[1] ?? b.k) || carName(a).localeCompare(carName(b)))
+    .map(x => `<option value="${x.c}"${x.c === it.c ? " selected" : ""}>${esc(clsOf(x))} · ${esc(carName(x))}</option>`).join("");
+  return `<div class="sec"><h3>같은 아이템 · 차량 ${fam.items.length}종 <span class="tag">${esc(fam.n)}</span></h3>`
+    + `<div style="display:flex;gap:10px;align-items:center;margin:0 0 8px"><label class="field sel"><select class="famSel" aria-label="차량 선택" style="width:220px">${opts}</select></label>`
+    + `<span class="desc" style="margin:0">차량을 고르거나 표에서 누르면 그 차량용으로 바뀝니다</span></div>`
     + `<div class="vars"><table><thead><tr><th class="l">차량</th><th>클래스</th>${cols.map(k => `<th>${esc(k)}</th>`).join("")}<th>상점</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function close(push = true) {
@@ -467,6 +473,7 @@ function bind() {
     if (t && !e.target.closest("#closeBtn")) { open(t.dataset.c); return; }
     if (e.target.id === "modal" || e.target.closest("#closeBtn")) close();
   });
+  document.addEventListener("change", e => { if (e.target.classList.contains("famSel")) open(e.target.value); });
   addEventListener("popstate", route);
   addEventListener("keydown", e => {
     if (e.key === "Escape" && !$("#modal").classList.contains("hidden")) close();
