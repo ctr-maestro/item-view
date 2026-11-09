@@ -105,7 +105,12 @@ main { padding: 16px 0 48px; }
 .it { display: flex; gap: 12px; align-items: center; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border);
   border-radius: 14px; cursor: pointer; min-width: 0; transition: border-color .15s, transform .15s; text-align: left; color: var(--text); }
 .it:hover { border-color: var(--accent); transform: translateY(-1px); }
-.ico { width: 48px; height: 48px; flex: none; border-radius: 10px; background: var(--surface-3); display: grid; place-items: center; overflow: hidden; }
+.ico { position: relative; width: 48px; height: 48px; flex: none; border-radius: 10px; background: var(--surface-3); display: grid; place-items: center; overflow: hidden; }
+.ico .car { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 2px; background: rgb(0 0 0 / .72); color: #fff; font-size: 9px; font-weight: 700;
+  line-height: 13px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0; }
+.ico.sm .car { display: none; }
+.ico.lg .car { font-size: 11px; line-height: 16px; }
+.carimg { height: 56px; border-radius: 8px; display: block; }
 .ico img { max-width: 100%; max-height: 100%; image-rendering: auto; }
 .ico.sm { width: 32px; height: 32px; border-radius: 8px; }
 .ico.lg { width: 64px; height: 64px; border-radius: 12px; }
@@ -163,6 +168,11 @@ td .row { display: flex; gap: 8px; align-items: center; }
 .mat .c { font-weight: 800; color: var(--text-2); }
 .tree { margin-left: 22px; border-left: 1px dashed var(--border); padding-left: 8px; }
 .tag { font-size: 11px; padding: 0 6px; border-radius: 6px; background: var(--surface-3); color: var(--text-2); }
+.srcs { display: grid; gap: 6px; }
+.src { display: flex; gap: 10px; align-items: center; padding: 8px 10px; background: var(--surface-2); border-radius: 10px; font-size: 13px; }
+.src .k { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.src .v { color: var(--text); }
+.pill.price b { color: var(--gold); }
 .foot { color: var(--muted); font-size: 12px; padding: 0 0 32px; line-height: 1.7; }
 </style>
 </head>
@@ -193,11 +203,12 @@ td .row { display: flex; gap: 8px; align-items: center; }
     <div class="chips" id="partChips" role="tablist" aria-label="파츠"></div>
     <label class="field sel"><select id="fGroup" aria-label="분류"></select></label>
     <label class="field sel"><select id="fClass" aria-label="클래스"></select></label>
+    <label class="field sel"><select id="fCar" aria-label="적용 차량"></select></label>
     <label class="field search">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-      <input type="search" id="fSearch" placeholder="아이템 이름 · 코드 검색  ( / )" aria-label="아이템 검색">
+      <input type="search" id="fSearch" placeholder="아이템 · 차량 이름 · 코드 검색  ( / )" aria-label="아이템 검색">
     </label>
-    <label class="toggle"><input type="checkbox" id="fFactory"> 팩토리 관련만</label>
+    <label class="field sel"><select id="fSrc" aria-label="얻는 곳"></select></label>
     <div class="seg" role="tablist" aria-label="보기"><button type="button" id="vCards" class="on">카드</button><button type="button" id="vTable">표</button></div>
     <button type="button" class="reset hidden" id="resetBtn">초기화</button>
   </div>
@@ -222,7 +233,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const PAGE = 120;
 let D = null, BY = new Map(), USED = new Map(), view = "cards", shown = PAGE, sortKey = null, sortDir = -1, list = [];
-const st = { part: "all", group: "", cls: "", q: "", factory: false };
+const st = { part: "all", group: "", cls: "", car: "", q: "", src: "" };
 
 // ---------------- 데이터
 fetch("items.json").then(r => r.json()).then(init).catch(e => { $("#built").textContent = "데이터를 불러오지 못했습니다"; console.error(e); });
@@ -238,6 +249,15 @@ function init(data) {
   const parts = [["all", "전체"], ...Object.entries(D.labels.part).filter(([k], i, a) => a.findIndex(x => x[1] === D.labels.part[k]) === i)];
   $("#partChips").innerHTML = parts.map(([k, v]) => `<button type="button" class="chip${k === "all" ? " on" : ""}" data-k="${k}">${esc(v)}</button>`).join("");
   $("#fClass").innerHTML = `<option value="">모든 클래스</option>` + Object.entries(D.labels.class).map(([k, v]) => `<option value="${k}">${k === "0" ? "클래스 무관" : v + " 클래스"}</option>`).join("");
+  const carCount = new Map();
+  for (const it of D.items) if (it.car) carCount.set(it.car, (carCount.get(it.car) || 0) + 1);
+  const carOpts = Object.entries(D.cars).sort((a, b) => a[1][1] - b[1][1] || a[1][0].localeCompare(b[1][0]))
+    .map(([c, [n, k]]) => `<option value="${c}">${esc(D.labels.class[k] ?? "")} · ${esc(n)} (${carCount.get(+c) || 0})</option>`);
+  $("#fCar").innerHTML = `<option value="">모든 차량</option><option value="0">공용 (차량 무관)</option>` + carOpts.join("");
+  const srcCount = new Map();
+  for (const it of D.items) for (const k of new Set((it.src || []).map(s => s[0]))) srcCount.set(k, (srcCount.get(k) || 0) + 1);
+  $("#fSrc").innerHTML = `<option value="">모든 획득처</option>` + [...srcCount].sort((a, b) => b[1] - a[1]).map(([k, n]) => `<option value="${esc(k)}">${esc(k)} (${n})</option>`).join("")
+    + `<option value="__use">팩토리 재료로 쓰임</option>`;
   fillGroups();
   bind();
   route();
@@ -259,8 +279,9 @@ function filtered() {
   return D.items.filter(it => (st.part === "all" || samePart(it.p))
     && (st.group === "" || it.g === +st.group)
     && (st.cls === "" || it.k === +st.cls)
-    && (!st.factory || D.recipes[it.c] || USED.has(it.c) || it.d)
-    && (!q || it.n.toLowerCase().includes(q) || String(it.c) === q));
+    && (st.car === "" || (st.car === "0" ? !it.car : it.car === +st.car))
+    && (!st.src || (st.src === "__use" ? USED.has(it.c) : (it.src || []).some(s => s[0] === st.src)))
+    && (!q || it.n.toLowerCase().includes(q) || String(it.c) === q || (it.car && carName(it).toLowerCase().includes(q))));
 }
 const statNum = v => v == null ? null : parseFloat(String(v).replace(/[^\d.+\-~]/g, "").split("~").pop());
 
@@ -277,8 +298,11 @@ function sorted(arr) {
 }
 
 // ---------------- 그리기
+const carName = it => (it?.car && D.cars[it.car]) ? D.cars[it.car][0] : "";
 function icon(it, size = "") {
-  return `<span class="ico ${size}">${it?.i ? `<img loading="lazy" src="icons/${esc(it.i)}.webp" alt="">` : `<span class="none">?</span>`}</span>`;
+  const car = carName(it);
+  return `<span class="ico ${size}">${it?.i ? `<img loading="lazy" src="icons/${esc(it.i)}.webp" alt="">` : `<span class="none">?</span>`}`
+    + `${car ? `<span class="car">${esc(car)}</span>` : ""}</span>`;
 }
 const clsTag = it => it.k ? `<span class="cls">${esc(D.labels.class[it.k])}</span>` : "";
 const groupName = it => D.labels.group[it.g] ?? "";
@@ -288,7 +312,7 @@ function render() {
   list = sorted(filtered());
   $("#count").textContent = `${list.length.toLocaleString()}개`;
   $("#empty").classList.toggle("hidden", list.length > 0);
-  $("#resetBtn").classList.toggle("hidden", !(st.part !== "all" || st.group || st.cls || st.q || st.factory));
+  $("#resetBtn").classList.toggle("hidden", !(st.part !== "all" || st.group || st.cls || st.car || st.q || st.src));
   const page = list.slice(0, shown);
   $("#moreBtn").classList.toggle("hidden", list.length <= shown);
   $("#moreBtn").textContent = `더 보기 (${(list.length - shown).toLocaleString()}개 남음)`;
@@ -297,17 +321,19 @@ function render() {
     $("#cards").classList.remove("hidden");
     $("#cards").innerHTML = page.map(it => {
       const pills = D.stats.filter(k => sv(it, k) != null).slice(0, 3).map(k => `<span class="pill">${esc(k)} <b>${esc(sv(it, k))}</b></span>`).join("");
-      const fac = D.recipes[it.c] ? `<span class="pill">설계도</span>` : it.d ? `<span class="pill">분해 <b>${it.d}</b></span>` : "";
+      const shop = (it.src || []).find(s => s[0] === "상점");
+      const fac = (shop ? `<span class="pill price"><b>${esc(shop[1])}</b></span>` : "")
+        + (D.recipes[it.c] ? `<span class="pill">${it.f === 2 ? "설계도" : "조합"}</span>` : "");
       return `<button type="button" class="it" data-c="${it.c}">${icon(it)}<span class="body"><div class="nm">${esc(it.n)}${clsTag(it)}</div>`
-        + `<div class="sub">${esc(groupName(it))}</div><div class="st">${pills}${fac}</div></span></button>`;
+        + `<div class="sub">${esc(groupName(it))}${carName(it) ? " · " + esc(carName(it)) : ""}</div><div class="st">${pills}${fac}</div></span></button>`;
     }).join("");
   } else {
     $("#cards").classList.add("hidden");
     $("#tableWrap").classList.remove("hidden");
     const th = (k, label, cls = "") => `<th class="${cls}${sortKey === k ? " on" : ""}" data-sort="${esc(k)}">${esc(label)}${sortKey === k ? (sortDir < 0 ? " ↓" : " ↑") : ""}</th>`;
-    $("#thead").innerHTML = `<tr>${th("name", "아이템", "l")}${th("class", "클래스")}<th class="l">분류</th>${D.stats.map(k => th(k, k)).join("")}</tr>`;
+    $("#thead").innerHTML = `<tr>${th("name", "아이템", "l")}${th("class", "클래스")}<th class="l">분류</th><th class="l">차량</th>${D.stats.map(k => th(k, k)).join("")}</tr>`;
     $("#tbody").innerHTML = page.map(it => `<tr data-c="${it.c}"><td class="l"><span class="row">${icon(it, "sm")}${esc(it.n)}</span></td>`
-      + `<td>${esc(D.labels.class[it.k] ?? "")}</td><td class="l">${esc(groupName(it))}</td>`
+      + `<td>${esc(D.labels.class[it.k] ?? "")}</td><td class="l">${esc(groupName(it))}</td><td class="l">${esc(carName(it))}</td>`
       + D.stats.map(k => { const v = sv(it, k); return v == null ? `<td class="q">???</td>` : `<td class="mono">${esc(v)}</td>`; }).join("") + `</tr>`).join("");
   }
 }
@@ -333,7 +359,7 @@ function tree(code, depth = 0, path = new Set()) {
   path.add(code);
   const out = [...count(r[1].filter(m => m !== code))].map(([m, n]) => {
     const sub = D.recipes[m] ? `<div class="tree">${tree(m, depth + 1, path)}</div>` : "";
-    return matRow(m, n, D.recipes[m] ? `<span class="tag">설계도</span>` : "") + sub;
+    return matRow(m, n, D.recipes[m] ? `<span class="tag">${BY.get(m)?.f === 2 ? "설계도" : "조합 가능"}</span>` : "") + sub;
   }).join("");
   path.delete(code);
   return out;
@@ -348,16 +374,21 @@ function open(code, push = true) {
   let fac = "";
   if (r) {
     const tot = [...totals(it.c)].sort((a, b) => b[1] - a[1]);
-    fac += `<div class="sec"><h3>조합 재료</h3><p class="desc">팩토리 수수료 ${r[0].toLocaleString()} CT · 설계도 자신 포함 ${r[1].length}개 · 재료가 설계도면 펼쳐서 보여줍니다</p>${tree(it.c)}</div>`;
+    fac += it.f === 2
+      ? `<div class="sec"><h3>설계도 사용 레시피</h3><p class="desc">팩토리에서 이 설계도 + 아래 재료 + 수수료 ${r[0].toLocaleString()} CT 로 제작합니다. 제작 결과는 게임 서버가 정합니다 (설명 참고)</p>${tree(it.c)}</div>`
+      : `<div class="sec"><h3>팩토리 조합 레시피</h3><p class="desc">아래 재료 + 수수료 ${r[0].toLocaleString()} CT → ${esc(it.n)} · 재료도 조합으로 만들 수 있으면 펼쳐서 보여줍니다</p>${tree(it.c)}</div>`;
     if (tot.some(([m]) => !r[1].includes(m)))
       fac += `<div class="sec"><h3>기본 재료 합계</h3><p class="desc">하위 설계도까지 끝까지 펼쳤을 때 필요한 재료 (하위 설계도의 수수료는 제외)</p>${tot.map(([m, n]) => matRow(m, n)).join("")}</div>`;
   }
   const used = USED.get(it.c);
-  if (used) fac += `<div class="sec"><h3>재료로 쓰이는 설계도 <span class="tag">${used.length}</span></h3>${used.slice(0, 60).map(b => matRow(b, count(D.recipes[b][1]).get(it.c))).join("")}${used.length > 60 ? `<p class="desc">…외 ${used.length - 60}개</p>` : ""}</div>`;
-  const kv = [["코드", it.c], ["파츠", D.labels.part[it.p]], ["분류", groupName(it)], ["클래스", D.labels.class[it.k]],
-    ["판매 방식", D.labels.pay[it.pay]], ["팩토리", D.labels.factory[it.f]], ["분해 포인트", it.d]].filter(([, v]) => v != null && v !== "");
-  $("#sheet").innerHTML = `<div class="sheet-head">${icon(it, "lg")}<div><h2>${esc(it.n)}${clsTag(it)}</h2><div class="sub">${esc(groupName(it))} · 코드 ${it.c}</div></div>`
+  if (used) fac += `<div class="sec"><h3>이 아이템이 재료로 쓰이는 곳 <span class="tag">${used.length}</span></h3>${used.slice(0, 60).map(b => matRow(b, count(D.recipes[b][1]).get(it.c))).join("")}${used.length > 60 ? `<p class="desc">…외 ${used.length - 60}개</p>` : ""}</div>`;
+  const kv = [["코드", it.c], ["파츠", D.labels.part[it.p]], ["분류", groupName(it)], ["클래스", D.labels.class[it.k]], ["적용 차량", carName(it) || "공용"],
+    ["판매 방식", D.labels.pay[it.pay]], ["거래소", it.tr ? "등록 가능" : null], ["팩토리", D.labels.factory[it.f]], ["분해 포인트", it.d]].filter(([, v]) => v != null && v !== "");
+  const carImg = it.car && D.cars[it.car]?.[2] ? `<img class="carimg" src="icons/car/${it.car}.webp" alt="${esc(carName(it))}" title="적용 차량 ${esc(carName(it))}">` : "";
+  $("#sheet").innerHTML = `<div class="sheet-head">${icon(it, "lg")}<div><h2>${esc(it.n)}${clsTag(it)}</h2><div class="sub">${esc(groupName(it))}${carName(it) ? " · " + esc(carName(it)) + " 전용" : ""} · 코드 ${it.c}</div></div>${carImg}`
     + `<button type="button" class="icon-btn x" id="closeBtn" aria-label="닫기">✕</button></div><div class="sheet-body">`
+    + `<div class="sec"><h3>얻는 곳</h3>${it.src ? `<div class="srcs">${it.src.map(([k, v]) => `<div class="src"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("")}</div>`
+      : `<p class="desc" style="margin:0">클라이언트 파일에 획득처 정보가 없습니다 (랜덤 상자 · 설계도 제작 결과 등은 서버에서 정해짐)</p>`}</div>`
     + `<div class="sec"><h3>게임 툴팁</h3><div class="tip"><div class="t-name">${esc(it.n)}</div>${tip}${it.x ? `<div class="x">${esc(it.x)}</div>` : ""}</div></div>`
     + (it.s > 0 || it.st ? `<div class="sec"><h3>성능</h3><p class="desc">툴팁에 표시되는 값 · 표시되지 않는 값은 ???</p><div class="stats">${stats}</div></div>` : "")
     + fac + `<div class="sec"><h3>정보</h3><dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div></div>`;
@@ -384,11 +415,12 @@ function bind() {
   });
   $("#fGroup").addEventListener("change", e => { st.group = e.target.value; reset(); });
   $("#fClass").addEventListener("change", e => { st.cls = e.target.value; reset(); });
+  $("#fCar").addEventListener("change", e => { st.car = e.target.value; reset(); });
   let t; $("#fSearch").addEventListener("input", e => { clearTimeout(t); t = setTimeout(() => { st.q = e.target.value; reset(); }, 120); });
-  $("#fFactory").addEventListener("change", e => { st.factory = e.target.checked; reset(); });
+  $("#fSrc").addEventListener("change", e => { st.src = e.target.value; reset(); });
   $("#resetBtn").addEventListener("click", () => {
-    Object.assign(st, { part: "all", group: "", cls: "", q: "", factory: false });
-    $("#fSearch").value = ""; $("#fClass").value = ""; $("#fFactory").checked = false;
+    Object.assign(st, { part: "all", group: "", cls: "", car: "", q: "", src: "" });
+    $("#fSearch").value = ""; $("#fClass").value = ""; $("#fCar").value = ""; $("#fSrc").value = "";
     document.querySelectorAll("#partChips .chip").forEach(x => x.classList.toggle("on", x.dataset.k === "all"));
     fillGroups(); reset();
   });
