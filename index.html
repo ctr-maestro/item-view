@@ -177,6 +177,10 @@ td .row { display: flex; gap: 8px; align-items: center; }
 .vars table { font-size: 12.5px; }
 .vars tr.on { background: var(--accent-soft); }
 .vars td, .vars th { padding: 5px 8px; }
+.carcard .cimg { width: 112px; height: 50px; flex: none; border-radius: 8px; object-fit: cover; background: var(--surface-3); }
+.gauge { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin-top: 6px; }
+.gauge i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.modeseg { margin-right: 4px; }
 .foot { color: var(--muted); font-size: 12px; padding: 0 0 32px; line-height: 1.7; }
 </style>
 </head>
@@ -204,6 +208,7 @@ td .row { display: flex; gap: 8px; align-items: center; }
 
 <div class="filterbar" id="filterbar">
   <div class="wrap">
+    <div class="seg modeseg" role="tablist" aria-label="보기 대상"><button type="button" id="mItems" class="on">아이템</button><button type="button" id="mCars">차량</button></div>
     <div class="chips" id="partChips" role="tablist" aria-label="파츠"></div>
     <label class="field sel"><select id="fGroup" aria-label="분류"></select></label>
     <label class="field sel"><select id="fClass" aria-label="클래스"></select></label>
@@ -219,7 +224,7 @@ td .row { display: flex; gap: 8px; align-items: center; }
 
 <div class="wrap">
   <main>
-    <div class="count"><span id="count"></span><span class="note">게임 툴팁에 표시되는 값만 보여줍니다 · 추가옵션 포함 · 표시되지 않는 값은 ???</span></div>
+    <div class="count"><span id="count"></span><span class="note" id="note">게임 툴팁에 표시되는 값만 보여줍니다 · 추가옵션 포함 · 표시되지 않는 값은 ???</span></div>
     <div id="cards" class="cards"></div>
     <div id="tableWrap" class="tablewrap hidden"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
     <div id="empty" class="empty hidden">조건에 맞는 아이템이 없습니다</div>
@@ -235,6 +240,7 @@ td .row { display: flex; gap: 8px; align-items: center; }
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const PAGE = 120;
+let mode = "items", CARS = [], CARBY = new Map();
 let D = null, BY = new Map(), USED = new Map(), FAM = new Map(), view = "cards", shown = PAGE, sortKey = null, sortDir = -1, list = [];
 const st = { part: "all", group: "", cls: "", car: "", q: "" };
 
@@ -244,6 +250,8 @@ fetch("items.json").then(r => r.json()).then(init).catch(e => { $("#built").text
 function init(data) {
   D = data;
   for (const it of D.items) BY.set(it.c, it);
+  CARS = (D.carshop?.rows || []).map(([c, n, k, price, pay, mile, hidden, st, img]) => ({ c, n, k, price, pay, mile, hidden, st, img }));
+  for (const c of CARS) CARBY.set(c.c, c);
   for (const [id, [n, codes]] of Object.entries(D.fams || {})) FAM.set(+id, { n, codes, items: codes.map(c => BY.get(c)).filter(Boolean) });
   for (const [bp, [, mats]] of Object.entries(D.recipes))
     for (const m of new Set(mats)) { if (m !== +bp) { if (!USED.has(m)) USED.set(m, []); USED.get(m).push(+bp); } }
@@ -320,6 +328,10 @@ const clsOf = it => D.labels.class[it.k || (it.car && D.cars[it.car]?.[1]) || 0]
 const sv = (it, k) => it.st?.[k] ?? null;
 
 function render() {
+  for (const id of ["#partChips", "#fGroup", "#fCar"]) $(id).closest(".field, .chips").classList.toggle("hidden", mode === "cars");
+  $("#fSearch").placeholder = mode === "cars" ? "차량 이름 검색  ( / )" : "아이템 · 차량 이름 · 코드 검색  ( / )";
+  $("#note").textContent = mode === "cars" ? "차량 상점에 표시되는 값 · R · G 클래스는 게임에서도 ???" : "게임 툴팁에 표시되는 값만 보여줍니다 · 추가옵션 포함 · 표시되지 않는 값은 ???";
+  if (mode === "cars") return renderCars();
   list = sorted(filtered());
   if (view === "cards" && !st.car) {
     // 차량별로 나뉜 같은 아이템은 카드 하나로 (차량 필터를 고르면 개별로)
@@ -358,6 +370,72 @@ function render() {
       + `<td>${esc(D.labels.class[it.k] ?? "")}</td><td class="l">${esc(groupName(it))}</td><td class="l">${esc(carName(it))}</td>`
       + D.stats.map(k => { const v = sv(it, k); return v == null ? `<td class="q">???</td>` : `<td class="mono">${esc(v)}</td>`; }).join("") + `</tr>`).join("");
   }
+}
+
+// ---------------- 차량
+const carPrice = c => c.price ? `${c.price.toLocaleString()} ${(D.carshop.pay[c.pay] || "").startsWith("캐시") ? "캐시" : "CT"}` : "";
+const carItems = code => D.items.filter(it => it.car === code).length;
+function carList() {
+  const q = st.q.trim().toLowerCase();
+  let arr = CARS.filter(c => (st.cls === "" || c.k === +st.cls) && (!q || c.n.toLowerCase().includes(q) || String(c.c) === q));
+  if (sortKey) {
+    const idx = D.carshop.stats.findIndex(s => s[0] === sortKey);
+    const get = sortKey === "name" ? c => c.n : sortKey === "class" ? c => c.k : sortKey === "price" ? c => c.price : c => c.st?.[idx] ?? null;
+    arr = [...arr].sort((a, b) => { const x = get(a), y = get(b); if (x == null) return 1; if (y == null) return -1;
+      return (typeof x === "string" ? x.localeCompare(y, "ko") : x - y) * sortDir; });
+  } else arr = [...arr].sort((a, b) => a.k - b.k || a.n.localeCompare(b.n));
+  return arr;
+}
+function renderCars() {
+  const arr = carList();
+  $("#count").textContent = `차량 ${arr.length}대`;
+  $("#empty").classList.toggle("hidden", arr.length > 0);
+  $("#moreBtn").classList.add("hidden");
+  $("#resetBtn").classList.toggle("hidden", !(st.cls || st.q));
+  const S = D.carshop.stats;
+  if (view === "cards") {
+    $("#tableWrap").classList.add("hidden"); $("#cards").classList.remove("hidden");
+    $("#cards").innerHTML = arr.map(c => {
+      const pills = c.st ? S.slice(0, 2).map(([k], i) => `<span class="pill">${esc(k)} <b>${c.st[i]}</b></span>`).join("") : `<span class="pill">성능 <b>???</b></span>`;
+      return `<button type="button" class="it carcard" data-car="${c.c}">${c.img ? `<img class="cimg" loading="lazy" src="icons/car/${c.c}.webp" alt="">` : `<span class="cimg"></span>`}`
+        + `<span class="body"><div class="nm">${esc(c.n)}<span class="cls">${esc(D.labels.class[c.k] ?? "")}</span></div>`
+        + `<div class="st">${c.price && !c.hidden ? `<span class="pill price"><b>${esc(carPrice(c))}</b></span>` : `<span class="pill">상점 미판매</span>`}${pills}</div></span></button>`;
+    }).join("");
+  } else {
+    $("#cards").classList.add("hidden"); $("#tableWrap").classList.remove("hidden");
+    const th = (k, label, cls = "") => `<th class="${cls}${sortKey === k ? " on" : ""}" data-sort="${esc(k)}">${esc(label)}${sortKey === k ? (sortDir < 0 ? " ↓" : " ↑") : ""}</th>`;
+    $("#thead").innerHTML = `<tr>${th("name", "차량", "l")}${th("class", "클래스")}${th("price", "가격")}${S.map(([k, u]) => th(k, `${k} (${u})`)).join("")}</tr>`;
+    $("#tbody").innerHTML = arr.map(c => `<tr data-car="${c.c}"><td class="l">${esc(c.n)}</td><td>${esc(D.labels.class[c.k] ?? "")}</td>`
+      + `<td class="mono">${c.hidden ? "미판매" : esc(carPrice(c))}</td>` + S.map((_, i) => c.st ? `<td class="mono">${c.st[i].toLocaleString()}</td>` : `<td class="q">???</td>`).join("") + `</tr>`).join("");
+  }
+}
+function openCar(code, push = true) {
+  const c = CARBY.get(+code);
+  if (!c) return;
+  const S = D.carshop.stats;
+  const stats = S.map(([k, u, max], i) => {
+    const v = c.st?.[i];
+    return `<div class="stat"><div class="k">${esc(k)} (${esc(u)})</div><div class="v mono${v == null ? " q" : ""}">${v == null ? "???" : v.toLocaleString()}</div>`
+      + `<div class="gauge"><i style="width:${v == null ? 0 : Math.max(0, Math.min(100, v / max * 100))}%"></i></div></div>`;
+  }).join("");
+  const n = carItems(c.c);
+  const kv = [["코드", c.c], ["클래스", D.labels.class[c.k]], ["판매가격", c.hidden ? "상점 미판매" : carPrice(c)], ["결제", D.carshop.pay[c.pay]],
+    ["필요 마일리지", c.mile ? c.mile.toLocaleString() + " km" : "없음"]].filter(([, v]) => v != null && v !== "");
+  $("#sheet").innerHTML = `<div class="sheet-head">${c.img ? `<img class="carimg" src="icons/car/${c.c}.webp" alt="">` : ""}<div><h2>${esc(c.n)}<span class="cls">${esc(D.labels.class[c.k] ?? "")}</span></h2>`
+    + `<div class="sub">차량 · 코드 ${c.c}</div></div><button type="button" class="icon-btn x" id="closeBtn" aria-label="닫기">✕</button></div><div class="sheet-body">`
+    + `<div class="sec"><h3>차량 정보</h3><dl class="kv">${kv.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div>`
+    + `<div class="sec"><h3>성능</h3><p class="desc">차량 상점에 표시되는 값 (클라이언트 기본 데이터 기준) · ${c.st ? "게이지는 상점 게이지와 같은 최대값 기준" : "R · G 클래스는 게임에서도 ??? 로 표시됩니다"}</p><div class="stats">${stats}</div></div>`
+    + (n ? `<div class="sec"><h3>전용 아이템</h3><button type="button" class="icon-btn" data-caritems="${c.c}">${esc(c.n)} 전용 아이템 ${n}개 보기</button></div>` : "")
+    + `</div>`;
+  $("#modal").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  $("#sheet").scrollTop = 0;
+  if (push && location.hash !== "#car-" + c.c) history.pushState(null, "", "#car-" + c.c);
+}
+function setMode(m) {
+  mode = m; sortKey = null; shown = PAGE;
+  $("#mItems").classList.toggle("on", m === "items"); $("#mCars").classList.toggle("on", m === "cars");
+  render();
 }
 
 // ---------------- 상세
@@ -442,7 +520,11 @@ function close(push = true) {
   document.body.style.overflow = "";
   if (push && location.hash) history.pushState(null, "", location.pathname + location.search);
 }
-function route() { const c = location.hash.slice(1); if (/^\d+$/.test(c) && BY.has(+c)) open(c, false); else close(false); }
+function route() {
+  const c = location.hash.slice(1);
+  if (/^car-\d+$/.test(c) && CARBY.has(+c.slice(4))) { if (mode !== "cars") setMode("cars"); openCar(c.slice(4), false); }
+  else if (/^\d+$/.test(c) && BY.has(+c)) open(c, false); else close(false);
+}
 
 // ---------------- 이벤트
 function bind() {
@@ -463,6 +545,8 @@ function bind() {
     document.querySelectorAll("#partChips .chip").forEach(x => x.classList.toggle("on", x.dataset.k === "all"));
     fillGroups(); reset();
   });
+  $("#mItems").addEventListener("click", () => setMode("items"));
+  $("#mCars").addEventListener("click", () => setMode("cars"));
   $("#vCards").addEventListener("click", () => { view = "cards"; $("#vCards").classList.add("on"); $("#vTable").classList.remove("on"); render(); });
   $("#vTable").addEventListener("click", () => { view = "table"; $("#vTable").classList.add("on"); $("#vCards").classList.remove("on"); render(); });
   $("#thead").addEventListener("click", e => {
@@ -473,6 +557,10 @@ function bind() {
   });
   $("#moreBtn").addEventListener("click", () => { shown += PAGE * 2; render(); });
   document.addEventListener("click", e => {
+    const ci = e.target.closest("[data-caritems]");
+    if (ci) { const code = ci.dataset.caritems; close(); setMode("items"); st.car = code; $("#fCar").value = code; shown = PAGE; render(); return; }
+    const cc = e.target.closest("[data-car]");
+    if (cc && !e.target.closest("#closeBtn")) { openCar(cc.dataset.car); return; }
     const t = e.target.closest("[data-c]");
     if (t && !e.target.closest("#closeBtn")) { open(t.dataset.c); return; }
     if (e.target.id === "modal" || e.target.closest("#closeBtn")) close();
